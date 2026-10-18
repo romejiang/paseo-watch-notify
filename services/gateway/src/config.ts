@@ -6,10 +6,6 @@ export interface GatewayConfig {
   port: number;
   /** When true, log pushes instead of contacting APNs. No Apple credentials required. */
   dryRun: boolean;
-  /** Bearer token the plugin must present on POST /api/notify. Empty disables auth (dev only). */
-  gatewayToken: string;
-  /** Optional separate bearer token for device registration. Falls back to gatewayToken. */
-  deviceToken: string;
   /** Path where registered device tokens are persisted. */
   devicesFile: string;
   apns: {
@@ -61,8 +57,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
   return {
     port: Number.parseInt(env.PORT?.trim() || "8787", 10),
     dryRun,
-    gatewayToken: env.PASEO_NOTIFY_GATEWAY_TOKEN?.trim() || "",
-    deviceToken: env.PASEO_NOTIFY_DEVICE_TOKEN?.trim() || env.PASEO_NOTIFY_GATEWAY_TOKEN?.trim() || "",
     devicesFile: env.DEVICES_FILE?.trim() || "devices.json",
     apns: {
       keyPem: dryRun ? "" : readKey(env),

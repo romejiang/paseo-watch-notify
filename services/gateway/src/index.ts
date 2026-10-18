@@ -21,15 +21,10 @@ function main(): void {
   if (config.dryRun) {
     logger("DRY_RUN is on; pushes are logged, not sent to APNs");
   }
-  if (!config.gatewayToken) {
-    console.error("[gateway] PASEO_NOTIFY_GATEWAY_TOKEN is not set; /api/notify is unauthenticated");
-  }
 
   const server = createServer({
     store,
     sender,
-    gatewayToken: config.gatewayToken,
-    deviceToken: config.deviceToken,
     defaultEnvironment: config.apns.environment,
     defaultTopic: config.apns.topic,
     logger,
@@ -37,7 +32,10 @@ function main(): void {
 
   listen(server, config.port)
     .then((port) => {
-      console.log(`[gateway] listening on :${port} (APNs ${config.apns.environment}, topic ${config.apns.topic})`);
+      console.log(
+        `[gateway] listening on :${port} (APNs ${config.apns.environment}, topic ${config.apns.topic}); ` +
+          "callers authenticate with their own channel secret",
+      );
     })
     .catch((error: unknown) => {
       console.error("[gateway] failed to start", error);

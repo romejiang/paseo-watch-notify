@@ -2,14 +2,12 @@ import { createServer as createHttpServer, type IncomingMessage, type ServerResp
 import type { AddressInfo } from "node:net";
 import type { PushSender } from "./apns.js";
 import type { ApnsEnvironment } from "./config.js";
-import type { DeviceStore } from "./devices.js";
+import { channelIdFromSecret, type DeviceStore } from "./devices.js";
 import { buildApnsPayload, type NotifyPayload } from "./payload.js";
 
 export interface GatewayDeps {
   store: DeviceStore;
   sender: PushSender;
-  gatewayToken: string;
-  deviceToken: string;
   logger?: (message: string, meta?: unknown) => void;
   /** Defaults applied when a device registration omits environment/topic. */
   defaultEnvironment: ApnsEnvironment;
@@ -48,17 +46,11 @@ async function readJsonBody(request: IncomingMessage, maxBytes: number): Promise
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 
-function bearerToken(request: IncomingMessage): string {
+/** The bearer token is the caller's channel secret. */
+function channelSecret(request: IncomingMessage): string {
   const header = request.headers.authorization ?? "";
   const match = /^Bearer\s+(.+)$/i.exec(header.trim());
   return match?.[1]?.trim() ?? "";
-}
-
-function authorized(request: IncomingMessage, expected: string): boolean {
-  if (!expected) {
-    return true;
-  }
-  return bearerToken(request) === expected;
 }
 
 function asEnvironment(value: unknown, fallback: ApnsEnvironment): ApnsEnvironment {
@@ -86,26 +78,27 @@ export function createServer(deps: GatewayDeps) {
     const method = request.method ?? "GET";
 
     if (method === "GET" && url.pathname === "/healthz") {
-      sendJson(response, 200, { ok: true, devices: deps.store.list().length });
+      // Never leaks per-channel information; a total is safe.
+      sendJson(response, 200, { ok: true, devices: deps.store.totalCount() });
       return;
     }
 
+    // Every API route is scoped to the caller's channel.
+    const secret = channelSecret(request);
+    if (!secret) {
+      sendJson(response, 401, { error: "missing bearer token" });
+      return;
+    }
+    const channelId = channelIdFromSecret(secret);
+
     if (method === "POST" && url.pathname === "/api/notify") {
-      if (!authorized(request, deps.gatewayToken)) {
-        sendJson(response, 401, { error: "unauthorized" });
-        return;
-      }
       const body = (await readJsonBody(request, maxBodyBytes)) as NotifyPayload;
-      const result = await deliver(body);
+      const result = await deliver(channelId, body);
       sendJson(response, 200, result);
       return;
     }
 
     if (method === "POST" && url.pathname === "/api/devices") {
-      if (!authorized(request, deps.deviceToken)) {
-        sendJson(response, 401, { error: "unauthorized" });
-        return;
-      }
       const body = (await readJsonBody(request, maxBodyBytes)) as {
         token?: string;
         environment?: string;
@@ -117,7 +110,7 @@ export function createServer(deps: GatewayDeps) {
         sendJson(response, 400, { error: "token is required" });
         return;
       }
-      const record = deps.store.upsert({
+      const record = deps.store.upsert(channelId, {
         token,
         environment: asEnvironment(body.environment, deps.defaultEnvironment),
         topic: body.topic?.trim() || deps.defaultTopic,
@@ -128,12 +121,8 @@ export function createServer(deps: GatewayDeps) {
     }
 
     if (method === "DELETE" && url.pathname.startsWith("/api/devices/")) {
-      if (!authorized(request, deps.deviceToken)) {
-        sendJson(response, 401, { error: "unauthorized" });
-        return;
-      }
       const token = decodeURIComponent(url.pathname.slice("/api/devices/".length));
-      const removed = deps.store.remove(token);
+      const removed = deps.store.remove(channelId, token);
       sendJson(response, removed ? 200 : 404, { removed });
       return;
     }
@@ -141,10 +130,10 @@ export function createServer(deps: GatewayDeps) {
     sendJson(response, 404, { error: "not found" });
   }
 
-  async function deliver(payload: NotifyPayload): Promise<NotifyResponse> {
-    const devices = deps.store.list();
+  async function deliver(channelId: string, payload: NotifyPayload): Promise<NotifyResponse> {
+    const devices = deps.store.list(channelId);
     if (devices.length === 0) {
-      log("no registered devices; dropping notification");
+      log("no registered devices for channel; dropping notification");
       return { delivered: 0, failed: 0, devices: 0 };
     }
     const apnsPayload = buildApnsPayload(payload);
@@ -163,9 +152,13 @@ export function createServer(deps: GatewayDeps) {
         failed += 1;
         // 410 means the token is no longer valid; drop it.
         if (result.status === 410) {
-          deps.store.remove(device.token);
+          deps.store.remove(channelId, device.token);
         }
-        log("push failed", { token: device.token.slice(0, 8), status: result.status, reason: result.reason ?? result.error });
+        log("push failed", {
+          token: device.token.slice(0, 8),
+          status: result.status,
+          reason: result.reason ?? result.error,
+        });
       }),
     );
     return { delivered, failed, devices: devices.length };

@@ -26,7 +26,7 @@ git clone https://github.com/romejiang/paseo-watch-notify.git
 cd paseo-watch-notify/services/gateway
 
 # 2) 准备配置与密钥
-cp deploy/gateway.env.example .env      # 填 PASEO_NOTIFY_GATEWAY_TOKEN / APNS_KEY_ID / APNS_TEAM_ID
+cp deploy/gateway.env.example .env      # 填 APNS_KEY_ID / APNS_TEAM_ID（注意：没有网关级 token）
 mkdir -p data secrets
 cp /path/AuthKey_XXXXXXXXXX.p8 secrets/AuthKey.p8
 
@@ -100,6 +100,15 @@ curl -s https://notify.everythingisnumber.cn/healthz
 
 然后在 iPhone App 里点「**重新检测网关**」，状态行应变成
 `网关可用：https://notify.everythingisnumber.cn`，再点「**复制配置**」把地址 + 密钥粘到 Paseo 插件。
+
+## 多租户（重要）
+
+这是个**给所有用户用的公共网关**，所以**没有「网关级 token」**：
+
+- `/api/notify` 与 `/api/devices` 的 `Authorization: Bearer <...>` **就是该用户自己的渠道密钥**
+  （即 App 里生成的 `pn_...`）；
+- 设备按 `sha256(渠道密钥)` 分渠道存储，**每个用户只会看到/推送到自己的设备**；
+- 与 Cloudflare 上的全球网关**同一套模型**，同一个密钥在两边都有效（但设备表各自独立）。
 
 ## 说明
 

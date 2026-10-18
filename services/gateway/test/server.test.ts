@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import type { DeliveryResult, PushSender, PushTarget } from "../src/apns.js";
-import { DeviceStore } from "../src/devices.js";
+import { channelIdFromSecret, DeviceStore } from "../src/devices.js";
 import { createServer, listen } from "../src/server.js";
 
 interface Captured {
@@ -23,8 +23,6 @@ function fakeSender(result: DeliveryResult | ((target: PushTarget) => DeliveryRe
 }
 
 async function startGateway(options?: {
-  gatewayToken?: string;
-  deviceToken?: string;
   result?: DeliveryResult | ((target: PushTarget) => DeliveryResult);
 }) {
   const store = new DeviceStore(join(mkdtempSync(join(tmpdir(), "gw-srv-")), "devices.json"));
@@ -32,8 +30,6 @@ async function startGateway(options?: {
   const server = createServer({
     store,
     sender,
-    gatewayToken: options?.gatewayToken ?? "",
-    deviceToken: options?.deviceToken ?? "",
     defaultEnvironment: "development",
     defaultTopic: "com.example.paseonotify",
   });
@@ -52,31 +48,40 @@ afterEach(async () => {
   }
 });
 
+const CHANNEL = "pn_test_channel_a";
+const OTHER = "pn_test_channel_b";
+
 describe("gateway server", () => {
-  test("healthz reports device count", async () => {
+  test("healthz reports the total device count", async () => {
     const gateway = await startGateway();
     open.push(gateway.close);
-    gateway.store.upsert({ token: "t1", environment: "development", topic: "a" });
+    gateway.store.upsert(channelIdFromSecret(CHANNEL), {
+      token: "t1",
+      environment: "development",
+      topic: "a",
+    });
     const response = await fetch(`${gateway.base}/healthz`);
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true, devices: 1 });
   });
 
   test("registers a device and forwards a notification to it", async () => {
-    const gateway = await startGateway({ gatewayToken: "secret", deviceToken: "secret" });
+    const gateway = await startGateway();
     open.push(gateway.close);
 
     const register = await fetch(`${gateway.base}/api/devices`, {
       method: "POST",
-      headers: { authorization: "Bearer secret", "content-type": "application/json" },
-      body: JSON.stringify({ token: "device-1", platform: "ios" }),
+      headers: { authorization: `Bearer ${CHANNEL}`, "content-type": "application/json" },
+      body: JSON.stringify({ token: "device-1", platform: "watch" }),
     });
     expect(register.status).toBe(201);
-    expect((await register.json()) as { topic: string }).toMatchObject({ topic: "com.example.paseonotify" });
+    expect((await register.json()) as { topic: string }).toMatchObject({
+      topic: "com.example.paseonotify",
+    });
 
     const notify = await fetch(`${gateway.base}/api/notify`, {
       method: "POST",
-      headers: { authorization: "Bearer secret", "content-type": "application/json" },
+      headers: { authorization: `Bearer ${CHANNEL}`, "content-type": "application/json" },
       body: JSON.stringify({ source: "paseo-notify", reason: "finished", preview: "Done." }),
     });
     expect(notify.status).toBe(200);
@@ -86,8 +91,27 @@ describe("gateway server", () => {
     expect(gateway.captured[0]?.payload).toMatchObject({ source: "paseo-notify" });
   });
 
-  test("rejects notify without the bearer token", async () => {
-    const gateway = await startGateway({ gatewayToken: "secret" });
+  test("isolates channels: another secret sees no devices", async () => {
+    const gateway = await startGateway();
+    open.push(gateway.close);
+
+    await fetch(`${gateway.base}/api/devices`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${CHANNEL}`, "content-type": "application/json" },
+      body: JSON.stringify({ token: "device-1" }),
+    });
+
+    const notify = await fetch(`${gateway.base}/api/notify`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${OTHER}`, "content-type": "application/json" },
+      body: JSON.stringify({ reason: "finished" }),
+    });
+    expect(await notify.json()).toEqual({ delivered: 0, failed: 0, devices: 0 });
+    expect(gateway.captured).toHaveLength(0);
+  });
+
+  test("rejects API calls without a bearer token", async () => {
+    const gateway = await startGateway();
     open.push(gateway.close);
     const response = await fetch(`${gateway.base}/api/notify`, {
       method: "POST",
@@ -103,34 +127,36 @@ describe("gateway server", () => {
       result: { token: "device-1", ok: false, status: 410, reason: "Unregistered" },
     });
     open.push(gateway.close);
-    gateway.store.upsert({ token: "device-1", environment: "development", topic: "a" });
+
+    await fetch(`${gateway.base}/api/devices`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${CHANNEL}`, "content-type": "application/json" },
+      body: JSON.stringify({ token: "device-1" }),
+    });
 
     const response = await fetch(`${gateway.base}/api/notify`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { authorization: `Bearer ${CHANNEL}`, "content-type": "application/json" },
       body: JSON.stringify({ reason: "finished" }),
     });
     expect(await response.json()).toMatchObject({ delivered: 0, failed: 1 });
-    expect(gateway.store.list()).toEqual([]);
-  });
-
-  test("accepts notify with no devices", async () => {
-    const gateway = await startGateway();
-    open.push(gateway.close);
-    const response = await fetch(`${gateway.base}/api/notify`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ reason: "finished" }),
-    });
-    expect(await response.json()).toEqual({ delivered: 0, failed: 0, devices: 0 });
+    expect(gateway.store.list(channelIdFromSecret(CHANNEL))).toEqual([]);
   });
 
   test("deletes a registered device", async () => {
     const gateway = await startGateway();
     open.push(gateway.close);
-    gateway.store.upsert({ token: "device-1", environment: "development", topic: "a" });
-    const response = await fetch(`${gateway.base}/api/devices/device-1`, { method: "DELETE" });
+
+    await fetch(`${gateway.base}/api/devices`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${CHANNEL}`, "content-type": "application/json" },
+      body: JSON.stringify({ token: "device-1" }),
+    });
+    const response = await fetch(`${gateway.base}/api/devices/device-1`, {
+      method: "DELETE",
+      headers: { authorization: `Bearer ${CHANNEL}` },
+    });
     expect(response.status).toBe(200);
-    expect(gateway.store.list()).toEqual([]);
+    expect(gateway.store.list(channelIdFromSecret(CHANNEL))).toEqual([]);
   });
 });

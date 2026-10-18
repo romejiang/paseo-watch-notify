@@ -27,8 +27,6 @@ npm start                          # 默认 :8787
 | 变量 | 说明 |
 | --- | --- |
 | `PORT` | 监听端口，默认 8787 |
-| `PASEO_NOTIFY_GATEWAY_TOKEN` | 插件 POST `/api/notify` 时必须带的 Bearer token；留空仅用于本地开发 |
-| `PASEO_NOTIFY_DEVICE_TOKEN` | iOS App 注册设备时的 Bearer token，缺省回退到上面那个 |
 | `DEVICES_FILE` | 设备注册表 JSON 路径，默认 `./devices.json` |
 | `APNS_KEY_PATH` / `APNS_KEY_P8` | APNs 签名私钥 `.p8`（文件路径，或内联 PEM，`\n` 转义） |
 | `APNS_KEY_ID` | Apple 后台 Keys 里的 Key ID |
@@ -56,21 +54,21 @@ APNs 返回 `410 Unregistered` 的 token 会被自动删除。
 cd services/gateway
 npm install --legacy-peer-deps && npm run build
 
-DRY_RUN=1 PASEO_NOTIFY_GATEWAY_TOKEN=dev-token DEVICES_FILE=/tmp/pn-devices.json \
+DRY_RUN=1 DEVICES_FILE=/tmp/pn-devices.json \
   APNS_TOPIC=com.example.paseonotify node dist/index.js
 
 # 另开一个终端：注册一个假设备，再发一条插件形状的负载
 curl -s -X POST http://127.0.0.1:8787/api/devices \
-  -H "Authorization: Bearer dev-token" -H "content-type: application/json" \
+  -H "Authorization: Bearer pn_dev_channel_secret" -H "content-type: application/json" \
   -d '{"token":"fakedevice0123456789","platform":"ios"}'
 
 curl -s -X POST http://127.0.0.1:8787/api/notify \
-  -H "Authorization: Bearer dev-token" -H "content-type: application/json" \
+  -H "Authorization: Bearer pn_dev_channel_secret" -H "content-type: application/json" \
   -d '{"source":"paseo-notify","reason":"finished","agentTitle":"Fix the bug","preview":"All done."}'
 # → {"delivered":1,"failed":0,"devices":1}，网关日志会打印映射后的 APNs 载荷
 ```
 
-再把 Paseo 插件的 Gateway URL 指向 `http://127.0.0.1:8787/api/notify`、token 填 `dev-token`，
+再把 Paseo 插件的 Gateway URL 指向 `http://127.0.0.1:8787`、token 填你自己的渠道密钥（`pn_...`），
 在设置页点 **Send test**，即可看到网关收到真实插件请求。
 
 ## 安全
