@@ -1,0 +1,19 @@
+{
+  "name": "paseo-notify-gateway",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Minimal APNs relay: receives paseo-notify payloads and forwards them to registered Apple devices.",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.6"
+  }
+}

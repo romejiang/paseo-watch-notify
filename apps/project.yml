@@ -1,0 +1,77 @@
+name: PaseoNotify
+options:
+  bundleIdPrefix: com.romejiang
+  createIntermediateGroups: true
+  deploymentTarget:
+    iOS: "17.0"
+    watchOS: "10.0"
+settings:
+  base:
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.0"
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+targets:
+  PaseoNotify:
+    type: application
+    platform: iOS
+    sources:
+      - path: iOS
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.romejiang.paseonotify
+        PRODUCT_NAME: PaseoNotify
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Paseo Watch
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        TARGETED_DEVICE_FAMILY: "1"
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait"
+        CODE_SIGN_ENTITLEMENTS: iOS/PaseoNotify.entitlements
+    dependencies:
+      - target: PaseoNotify Watch App
+        embed: true
+    scheme:
+      testTargets:
+        - PaseoNotifyUITests
+  PaseoNotify Watch App:
+    type: application
+    platform: watchOS
+    sources:
+      - path: Watch
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.romejiang.paseonotify.watchkitapp
+        PRODUCT_NAME: PaseoNotify
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Paseo Watch
+        INFOPLIST_KEY_WKCompanionAppBundleIdentifier: com.romejiang.paseonotify
+        INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp: YES
+        CODE_SIGN_ENTITLEMENTS: "PaseoNotify Watch App.entitlements"
+    scheme:
+      testTargets:
+        - PaseoNotifyWatchUITests
+  PaseoNotifyUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: UITests
+    dependencies:
+      - target: PaseoNotify
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.romejiang.paseonotify.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: PaseoNotify
+  PaseoNotifyWatchUITests:
+    type: bundle.ui-testing
+    platform: watchOS
+    sources:
+      - path: WatchUITests
+    dependencies:
+      - target: PaseoNotify Watch App
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.romejiang.paseonotify.watchkitapp.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: PaseoNotify Watch App

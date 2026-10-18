@@ -1,0 +1,28 @@
+name = "paseo-notify-gateway"
+main = "src/index.ts"
+compatibility_date = "2025-09-01"
+
+# Keep the workers.dev route as well as the custom domain.
+workers_dev = true
+
+# Custom domain for the Worker. Cloudflare creates the DNS record and certificate on deploy.
+routes = [
+  { pattern = "notify.romejiang.top", custom_domain = true }
+]
+
+# Non-secret configuration. Secrets (APNS_KEY_P8, APNS_KEY_ID, APNS_TEAM_ID) are set with
+# `wrangler secret put <NAME>` and never live in this file.
+[vars]
+# The iOS app's Bundle ID, shared by every user of the published plugin.
+APNS_TOPIC = "com.romejiang.paseonotify"
+# "development" (sandbox) or "production".
+APNS_ENV = "development"
+# Start with "1" so a fresh deploy never talks to APNs before secrets exist. Set to "0" for real pushes.
+DRY_RUN = "0"
+
+# Wiring for the device registry. Create it with:
+#   wrangler kv namespace create DEVICES
+# then paste the returned id below.
+[[kv_namespaces]]
+binding = "DEVICES"
+id = "1f71774614d342f098a44d35c72d8df5"

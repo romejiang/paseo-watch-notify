@@ -1,0 +1,15 @@
+{
+  "Simulator Target Bundle": "com.example.paseonotify",
+  "aps": {
+    "alert": { "title": "Fix the bug finished", "body": "All done. Tests pass." },
+    "sound": "default",
+    "interruption-level": "time-sensitive",
+    "thread-id": "paseo-notify",
+    "mutable-content": 1
+  },
+  "source": "paseo-notify",
+  "type": "agent.finished",
+  "reason": "finished",
+  "agentId": "demo",
+  "preview": "All done. Tests pass."
+}

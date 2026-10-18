@@ -1,0 +1,21 @@
+{
+  "name": "paseo-notify-gateway-worker",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Cloudflare Worker APNs relay for paseo-notify: receives notification payloads and fans them out to the caller's registered Apple devices.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250109.0",
+    "@types/node": "^22.20.5",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.6",
+    "wrangler": "^4.61.1"
+  }
+}

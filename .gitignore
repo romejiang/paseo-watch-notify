@@ -1,0 +1,20 @@
+node_modules/
+dist/
+build/
+.DS_Store
+
+# Generated Xcode project (regenerate with `xcodegen generate` from apps/project.yml).
+apps/PaseoNotify.xcodeproj/
+DerivedData/
+*.xcuserstate
+
+# Secrets and local config for the gateway / apps. Never commit these.
+.env
+.env.*
+*.p8
+*.p12
+*.mobileprovision
+services/gateway/devices.json
+services/gateway/.dev.vars
+services/gateway-worker/.dev.vars
+.wrangler/

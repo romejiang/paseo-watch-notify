@@ -1,0 +1,9 @@
+{
+  "id": "paseo-notify",
+  "name": "Paseo Watch Notify",
+  "description": "Push a notification to your Apple Watch when a Paseo agent truly finishes or needs a permission decision.",
+  "media": [],
+  "requirements": {
+    "paseo": ">=0.11.4"
+  }
+}
