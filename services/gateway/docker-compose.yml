@@ -1,0 +1,25 @@
+# Run the gateway behind your own reverse proxy (Caddy/Nginx) on the same host.
+#
+#   cp deploy/gateway.env.example .env       # fill the values
+#   mkdir -p data secrets
+#   cp AuthKey_XXXXXXXXXX.p8 secrets/AuthKey.p8
+#   docker compose up -d --build
+#
+# The container only binds to loopback; the reverse proxy terminates TLS and forwards to :8787.
+
+services:
+  gateway:
+    build: .
+    image: paseo-notify-gateway:local
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8787:8787"
+    env_file:
+      - .env
+    environment:
+      PORT: "8787"
+      DEVICES_FILE: "/data/devices.json"
+      APNS_KEY_PATH: "/secrets/AuthKey.p8"
+    volumes:
+      - ./data:/data
+      - ./secrets:/secrets:ro

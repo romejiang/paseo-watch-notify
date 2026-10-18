@@ -1,0 +1,25 @@
+[Unit]
+Description=Paseo Watch Notify gateway (APNs relay)
+Documentation=https://github.com/romejiang/paseo-watch-notify
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=paseo-notify
+Group=paseo-notify
+WorkingDirectory=/opt/paseo-notify-gateway
+EnvironmentFile=/etc/paseo-notify/gateway.env
+ExecStart=/usr/bin/node dist/index.js
+Restart=always
+RestartSec=2
+
+# Hardening: the service only needs to read its own code, write the registry file, and read the key.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/paseo-notify
+
+[Install]
+WantedBy=multi-user.target

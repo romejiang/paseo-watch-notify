@@ -18,3 +18,5 @@ services/gateway/devices.json
 services/gateway/.dev.vars
 services/gateway-worker/.dev.vars
 .wrangler/
+services/gateway/data/
+services/gateway/secrets/

@@ -18,21 +18,34 @@ struct ContentView: View {
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled()
 
-          HStack {
-            Button {
-              settings.generateToken()
-            } label: {
-              Label(L10n.t("Generate", "生成"), systemImage: "wand.and.stars")
-            }
-            Spacer()
-            Button {
-              UIPasteboard.general.string = settings.deviceToken
-              settings.statusMessage = L10n.t("Copied to clipboard.", "已复制到剪贴板。")
-            } label: {
-              Label(L10n.t("Copy", "复制"), systemImage: "doc.on.doc")
-            }
-            .disabled(settings.deviceToken.isEmpty)
+          Button {
+            settings.generateToken()
+          } label: {
+            Label(L10n.t("Generate secret", "生成密钥"), systemImage: "wand.and.stars")
           }
+
+          Button {
+            UIPasteboard.general.string = settings.configText
+            settings.statusMessage = L10n.t(
+              "Copied the gateway URL and secret. Paste both into the Paseo plugin.",
+              "已复制网关地址和密钥。请把它们粘贴到 Paseo 插件设置里。"
+            )
+          } label: {
+            Label(L10n.t("Copy config (URL + secret)", "复制配置（地址 + 密钥）"), systemImage: "doc.on.doc")
+          }
+          .disabled(settings.deviceToken.isEmpty)
+
+          Button {
+            Task { await settings.selectReachableGateway() }
+          } label: {
+            Label(
+              settings.isProbing
+                ? L10n.t("Checking gateways…", "正在检测网关…")
+                : L10n.t("Re-check gateway", "重新检测网关"),
+              systemImage: "antenna.radiowaves.left.and.right"
+            )
+          }
+          .disabled(settings.isProbing)
         }
 
         Section(L10n.t("Apple Watch", "Apple Watch")) {
@@ -54,8 +67,8 @@ struct ContentView: View {
               .fontWeight(.semibold)
             Text(
               L10n.t(
-                "1. Tap Generate, then Copy, and paste the secret into the Paseo plugin settings.",
-                "① 点「生成」，再点「复制」，把密钥粘贴到 Paseo 插件的设置里。"
+                "1. Tap “Copy config”, then paste the gateway URL and secret into the Paseo plugin settings.",
+                "① 点「复制配置」，把网关地址和密钥粘贴到 Paseo 插件的设置里。"
               )
             )
             Text(
@@ -68,8 +81,22 @@ struct ContentView: View {
           .font(.footnote)
           .foregroundStyle(.secondary)
         }
+
+        Section {
+          Text(
+            L10n.t(
+              "This iPhone does not receive notifications. The Apple Watch gets them directly. The app picks a reachable gateway automatically; paste the same URL into the plugin.",
+              "这台 iPhone 不接收通知，提醒由 Apple Watch 直接接收。App 会自动选择可用的网关；请把同一个地址粘贴到插件里。"
+            )
+          )
+          .font(.footnote)
+          .foregroundStyle(.secondary)
+        }
       }
       .navigationTitle("Paseo Watch Notify")
+      .task {
+        await settings.selectReachableGateway()
+      }
     }
   }
 }
