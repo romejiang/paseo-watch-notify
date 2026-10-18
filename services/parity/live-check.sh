@@ -49,14 +49,15 @@ req unknown-route         GET    /api/nope    ''                                
 req oversized-body        POST   /api/notify  "$big_body"                                     "$empty"
 
 # Rate limiting: both gateways must reject a burst that exceeds the per-channel budget (60/window).
-# Sent concurrently because a sequential loop (~1 req/s) never drains a token bucket.
-burst="$(seq 1 120 | xargs -P 30 -I{} curl -s -o /dev/null -w '%{http_code}\n' \
+# Sent concurrently because a sequential loop (~1 req/s) never drains a token bucket. Kept under the
+# per-IP budget (120) so the cleanup requests below are not themselves rate limited.
+burst="$(seq 1 100 | xargs -P 30 -I{} curl -s -o /dev/null -w '%{http_code}\n' \
   -X POST "$BASE/api/notify" -H "Authorization: Bearer $rl" \
   -H 'content-type: application/json' --data '{}' --max-time 20)"
 ok="$(printf '%s\n' "$burst" | grep -c '^200$')"
 blocked="$(printf '%s\n' "$burst" | grep -c '^429$')"
 other="$(printf '%s\n' "$burst" | grep -vc -e '^200$' -e '^429$')"
-printf 'burst-120|ok=%s|blocked=%s|other=%s\n' "$ok" "$blocked" "$other"
+printf 'burst-100|ok=%s|blocked=%s|other=%s\n' "$ok" "$blocked" "$other"
 
 # Clean up the throwaway devices so repeat runs do not accumulate garbage.
 for token in parity-1 parity-2 parity-3; do
