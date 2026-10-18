@@ -27,8 +27,16 @@ function main(): void {
     sender,
     defaultEnvironment: config.apns.environment,
     defaultTopic: config.apns.topic,
+    rateLimit: config.rateLimit,
     logger,
   });
+
+  if (config.rateLimit.enabled) {
+    logger(
+      `rate limit: ${config.rateLimit.perChannel}/window per channel, ` +
+        `${config.rateLimit.perIp}/window per IP, window ${config.rateLimit.windowMs}ms`,
+    );
+  }
 
   listen(server, config.port)
     .then((port) => {

@@ -18,7 +18,32 @@
 
 > 大陆服务器上，`api.push.apple.com` 是可达的（苹果推送在中国大陆正常可用），所以国内网关可以正常推送。
 
-## 方式一：Docker（推荐）
+## 一键部署脚本（推荐）
+
+`deploy/deploy-remote.sh` 会把网关部署到远端并交给 PM2 管理（本地构建 → 只传 `dist/`）：
+
+```bash
+cd services/gateway
+./deploy/deploy-remote.sh
+```
+
+可用环境变量覆盖默认值：
+
+| 变量 | 默认 | 说明 |
+| --- | --- | --- |
+| `SSH_HOST` | `yang` | 目标 SSH |
+| `REMOTE_DIR` | `/root/paseo-notify-gateway` | 远端目录 |
+| `APP_NAME` | `paseo-notify-gateway` | PM2 应用名 |
+| `NODE_BIN` | `/root/.nvm/versions/node/v20.20.2/bin/node` | 用哪个 Node 跑 |
+| `PM2_BIN` | `/root/.nvm/versions/node/v20.20.2/bin/pm2` | 用哪个 pm2 |
+
+脚本会：本地 `npm ci && npm run build` → `rsync dist/` → 若 `.env` 不存在则从模板生成并**停下让你填** →
+若 `secrets/AuthKey.p8` 不存在则提示上传 → `pm2 start/reload --interpreter <NODE_BIN> --update-env` → `pm2 save` → `curl /healthz`。
+
+> 非交互 SSH 没有 nvm 的 PATH，所以脚本用**绝对路径**调用 node/pm2；并且用 `--interpreter` 把应用
+> **锁定在你指定的 Node 版本**（守护进程本身跑在 v25 也没关系）。
+
+## 方式一：Docker（备选）
 
 ```bash
 # 1) 取代码（只需 services/gateway）
@@ -90,6 +115,19 @@ server {
     }
 }
 ```
+
+## 限流
+
+内置**零依赖**的内存固定窗口限流（无需 Redis）：
+
+| 环境变量 | 默认 | 说明 |
+| --- | --- | --- |
+| `RATE_LIMIT_ENABLED` | `1` | 是否开启 |
+| `RATE_LIMIT_PER_CHANNEL` | `60` | 每个**渠道密钥**每窗口可请求次数（真正的保护：一个用户刷不影响别人） |
+| `RATE_LIMIT_PER_IP` | `120` | 每个 **IP** 每窗口可请求次数（挡未鉴权的洪水） |
+| `RATE_LIMIT_WINDOW_MS` | `60000` | 窗口长度（毫秒） |
+
+超限返回 **HTTP 429** + `Retry-After` 头。按 IP 那条依赖反代传 `X-Forwarded-For`（Caddy/Nginx 默认会带）。
 
 ## 验证
 

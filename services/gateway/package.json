@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
   "description": "Minimal APNs relay: receives paseo-notify payloads and forwards them to registered Apple devices.",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

@@ -4,6 +4,7 @@ import type { PushSender } from "./apns.js";
 import type { ApnsEnvironment } from "./config.js";
 import { channelIdFromSecret, type DeviceStore } from "./devices.js";
 import { buildApnsPayload, type NotifyPayload } from "./payload.js";
+import { clientAddress, RateLimiter, type RateLimitDecision } from "./ratelimit.js";
 
 export interface GatewayDeps {
   store: DeviceStore;
@@ -13,6 +14,12 @@ export interface GatewayDeps {
   defaultEnvironment: ApnsEnvironment;
   defaultTopic: string;
   maxBodyBytes?: number;
+  rateLimit?: {
+    enabled: boolean;
+    perChannel: number;
+    perIp: number;
+    windowMs: number;
+  };
 }
 
 interface NotifyResponse {
@@ -60,9 +67,26 @@ function asEnvironment(value: unknown, fallback: ApnsEnvironment): ApnsEnvironme
   return fallback;
 }
 
+function sendTooMany(response: ServerResponse, decision: RateLimitDecision): void {
+  const payload = JSON.stringify({ error: "rate limited", retryAfter: decision.retryAfter });
+  response.writeHead(429, {
+    ...JSON_HEADERS,
+    "content-length": Buffer.byteLength(payload),
+    "retry-after": String(decision.retryAfter),
+    "x-ratelimit-limit": String(decision.limit),
+    "x-ratelimit-remaining": "0",
+  });
+  response.end(payload);
+}
+
 export function createServer(deps: GatewayDeps) {
   const log = deps.logger ?? (() => {});
   const maxBodyBytes = deps.maxBodyBytes ?? 64 * 1024;
+  const limitConfig = deps.rateLimit ?? { enabled: false, perChannel: 60, perIp: 120, windowMs: 60_000 };
+  const channelLimiter = limitConfig.enabled
+    ? new RateLimiter(limitConfig.perChannel, limitConfig.windowMs)
+    : null;
+  const ipLimiter = limitConfig.enabled ? new RateLimiter(limitConfig.perIp, limitConfig.windowMs) : null;
 
   return createHttpServer((request, response) => {
     void handle(request, response).catch((error: unknown) => {
@@ -83,6 +107,16 @@ export function createServer(deps: GatewayDeps) {
       return;
     }
 
+    // Unauthenticated flood guard, applied to every API route.
+    if (ipLimiter) {
+      const decision = ipLimiter.check(clientAddress(request));
+      if (!decision.allowed) {
+        log("rate limited", { scope: "ip" });
+        sendTooMany(response, decision);
+        return;
+      }
+    }
+
     // Every API route is scoped to the caller's channel.
     const secret = channelSecret(request);
     if (!secret) {
@@ -90,6 +124,16 @@ export function createServer(deps: GatewayDeps) {
       return;
     }
     const channelId = channelIdFromSecret(secret);
+
+    // Per-user budget, so one noisy user cannot affect others.
+    if (channelLimiter) {
+      const decision = channelLimiter.check(channelId);
+      if (!decision.allowed) {
+        log("rate limited", { scope: "channel" });
+        sendTooMany(response, decision);
+        return;
+      }
+    }
 
     if (method === "POST" && url.pathname === "/api/notify") {
       const body = (await readJsonBody(request, maxBodyBytes)) as NotifyPayload;

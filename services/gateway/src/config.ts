@@ -8,6 +8,14 @@ export interface GatewayConfig {
   dryRun: boolean;
   /** Path where registered device tokens are persisted. */
   devicesFile: string;
+  rateLimit: {
+    enabled: boolean;
+    /** Requests allowed per window, per channel secret. */
+    perChannel: number;
+    /** Requests allowed per window, per client address (guards unauthenticated floods). */
+    perIp: number;
+    windowMs: number;
+  };
   apns: {
     /** Contents of the .p8 signing key. Empty in dry-run mode. */
     keyPem: string;
@@ -52,12 +60,23 @@ function isTruthy(value: string | undefined): boolean {
   return normalized === "1" || normalized === "true" || normalized === "yes";
 }
 
+function positiveInt(value: string | undefined, fallback: number): number {
+  const parsed = Number.parseInt(value?.trim() ?? "", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig {
   const dryRun = isTruthy(env.DRY_RUN);
   return {
     port: Number.parseInt(env.PORT?.trim() || "8787", 10),
     dryRun,
     devicesFile: env.DEVICES_FILE?.trim() || "devices.json",
+    rateLimit: {
+      enabled: env.RATE_LIMIT_ENABLED === undefined ? true : isTruthy(env.RATE_LIMIT_ENABLED),
+      perChannel: positiveInt(env.RATE_LIMIT_PER_CHANNEL, 60),
+      perIp: positiveInt(env.RATE_LIMIT_PER_IP, 120),
+      windowMs: positiveInt(env.RATE_LIMIT_WINDOW_MS, 60_000),
+    },
     apns: {
       keyPem: dryRun ? "" : readKey(env),
       keyId: env.APNS_KEY_ID?.trim() || "",

@@ -24,6 +24,7 @@ function fakeSender(result: DeliveryResult | ((target: PushTarget) => DeliveryRe
 
 async function startGateway(options?: {
   result?: DeliveryResult | ((target: PushTarget) => DeliveryResult);
+  rateLimit?: { enabled: boolean; perChannel: number; perIp: number; windowMs: number };
 }) {
   const store = new DeviceStore(join(mkdtempSync(join(tmpdir(), "gw-srv-")), "devices.json"));
   const { sender, captured } = fakeSender(options?.result ?? { token: "x", ok: true, status: 200 });
@@ -32,6 +33,7 @@ async function startGateway(options?: {
     sender,
     defaultEnvironment: "development",
     defaultTopic: "com.example.paseonotify",
+    rateLimit: options?.rateLimit,
   });
   const port = await listen(server, 0);
   const close = () =>
@@ -141,6 +143,45 @@ describe("gateway server", () => {
     });
     expect(await response.json()).toMatchObject({ delivered: 0, failed: 1 });
     expect(gateway.store.list(channelIdFromSecret(CHANNEL))).toEqual([]);
+  });
+
+  test("rate limits a channel after its budget is used", async () => {
+    const gateway = await startGateway({
+      rateLimit: { enabled: true, perChannel: 2, perIp: 100, windowMs: 60_000 },
+    });
+    open.push(gateway.close);
+
+    const notify = () =>
+      fetch(`${gateway.base}/api/notify`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${CHANNEL}`, "content-type": "application/json" },
+        body: JSON.stringify({ reason: "finished" }),
+      });
+
+    expect((await notify()).status).toBe(200);
+    expect((await notify()).status).toBe(200);
+    const blocked = await notify();
+    expect(blocked.status).toBe(429);
+    expect(blocked.headers.get("retry-after")).toBeTruthy();
+  });
+
+  test("rate limit is per channel, not global", async () => {
+    const gateway = await startGateway({
+      rateLimit: { enabled: true, perChannel: 1, perIp: 100, windowMs: 60_000 },
+    });
+    open.push(gateway.close);
+
+    const notify = (secret: string) =>
+      fetch(`${gateway.base}/api/notify`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${secret}`, "content-type": "application/json" },
+        body: JSON.stringify({ reason: "finished" }),
+      });
+
+    expect((await notify(CHANNEL)).status).toBe(200);
+    expect((await notify(CHANNEL)).status).toBe(429);
+    // A different channel still has its own budget.
+    expect((await notify(OTHER)).status).toBe(200);
   });
 
   test("deletes a registered device", async () => {
