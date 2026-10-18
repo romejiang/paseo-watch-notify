@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import type { ApnsSender, DeliveryResult, PushTarget } from "../src/apns.js";
 import type { DeviceRecord, DeviceStore } from "../src/devices.js";
 import { handle, type HandlerDeps } from "../src/index.js";
+import { RateLimiterShard } from "../src/ratelimit-object.js";
 
 class FakeStore implements DeviceStore {
   private readonly channels = new Map<string, Map<string, DeviceRecord>>();
@@ -151,6 +152,116 @@ describe("gateway worker", () => {
       deps(),
     );
     expect(response.status).toBe(400);
+  });
+
+  test("honors the device-reported environment", async () => {
+    const store = new FakeStore();
+    const d = deps({ devices: store, defaultEnvironment: "development" });
+    const response = await handle(
+      req("/api/devices", {
+        method: "POST",
+        headers: authed("c"),
+        body: JSON.stringify({ token: "t", environment: "production" }),
+      }),
+      d,
+    );
+    expect((await response.json()) as DeviceRecord).toMatchObject({
+      environment: "production",
+      updatedAt: expect.any(String),
+    });
+  });
+
+  test("treats sandbox as development even when the default is production", async () => {
+    const store = new FakeStore();
+    const response = await handle(
+      req("/api/devices", {
+        method: "POST",
+        headers: authed("c"),
+        body: JSON.stringify({ token: "t", environment: "sandbox" }),
+      }),
+      deps({ devices: store, defaultEnvironment: "production" }),
+    );
+    expect((await response.json()) as DeviceRecord).toMatchObject({ environment: "development" });
+  });
+
+  test("uses the Durable Object limiter when the namespace is bound", async () => {
+    const shard = new RateLimiterShard();
+    const namespace = {
+      idFromName: (name: string) => name,
+      get: () => ({ fetch: (input: string) => shard.fetch(new Request(input)) }),
+    } as unknown as DurableObjectNamespace;
+    const d = deps({
+      rateLimit: { enabled: true, perChannel: 2, perIp: 100, windowMs: 60_000 },
+      rateLimitShards: namespace,
+    });
+    const notify = () =>
+      handle(
+        req("/api/notify", { method: "POST", headers: authed("rl-do"), body: JSON.stringify({ reason: "finished" }) }),
+        d,
+      );
+    expect((await notify()).status).toBe(200);
+    expect((await notify()).status).toBe(200);
+    const blocked = await notify();
+    expect(blocked.status).toBe(429);
+    expect(blocked.headers.get("retry-after")).toBe("60");
+    expect(await blocked.json()).toMatchObject({ error: "rate limited", retryAfter: 60 });
+  });
+
+  test("rejects an invalid JSON body with 400", async () => {
+    const response = await handle(
+      req("/api/notify", { method: "POST", headers: authed("c"), body: "{not json" }),
+      deps(),
+    );
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: "invalid JSON body" });
+  });
+
+  test("rejects an oversized body with 413", async () => {
+    const response = await handle(
+      req("/api/notify", {
+        method: "POST",
+        headers: authed("c"),
+        body: JSON.stringify({ preview: "x".repeat(70 * 1024) }),
+      }),
+      deps(),
+    );
+    expect(response.status).toBe(413);
+    expect(await response.json()).toMatchObject({ error: "request body too large" });
+  });
+
+  test("rate limits a channel after its budget is used", async () => {
+    const d = deps({ rateLimit: { enabled: true, perChannel: 2, perIp: 100, windowMs: 60_000 } });
+    const notify = () =>
+      handle(
+        req("/api/notify", { method: "POST", headers: authed("rl-channel"), body: JSON.stringify({ reason: "finished" }) }),
+        d,
+      );
+    expect((await notify()).status).toBe(200);
+    expect((await notify()).status).toBe(200);
+    const blocked = await notify();
+    expect(blocked.status).toBe(429);
+    expect(blocked.headers.get("retry-after")).toBeTruthy();
+  });
+
+  test("rate limit is per channel, not global", async () => {
+    const d = deps({ rateLimit: { enabled: true, perChannel: 1, perIp: 100, windowMs: 60_000 } });
+    const notify = (secret: string) =>
+      handle(
+        req("/api/notify", { method: "POST", headers: authed(secret), body: JSON.stringify({ reason: "finished" }) }),
+        d,
+      );
+    expect((await notify("rl-a")).status).toBe(200);
+    expect((await notify("rl-a")).status).toBe(429);
+    expect((await notify("rl-b")).status).toBe(200);
+  });
+
+  test("rejects a malformed device token encoding with 400", async () => {
+    const response = await handle(
+      req("/api/devices/%ZZ", { method: "DELETE", headers: authed("c") }),
+      deps(),
+    );
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: "invalid device token" });
   });
 
   test("deletes a registered device", async () => {

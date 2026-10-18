@@ -6,7 +6,8 @@ export interface DeviceRecord {
   /** APNs topic (Bundle ID) this token belongs to. */
   topic: string;
   platform?: string;
-  createdAt: string;
+  /** Last time this device registered. Same field name as the Node gateway. */
+  updatedAt: string;
 }
 
 /**

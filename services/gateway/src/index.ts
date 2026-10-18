@@ -21,6 +21,7 @@ function main(): void {
   if (config.dryRun) {
     logger("DRY_RUN is on; pushes are logged, not sent to APNs");
   }
+  logger(`loaded ${store.totalCount()} registered device(s)`);
 
   const server = createServer({
     store,

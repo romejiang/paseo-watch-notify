@@ -11,6 +11,8 @@
     "build:gateway": "npm --prefix services/gateway run build",
     "typecheck:worker": "npm --prefix services/gateway-worker run typecheck",
     "test:worker": "npm --prefix services/gateway-worker run test",
+    "parity": "npm --prefix services/gateway run parity",
+    "verify:gateways": "npm run typecheck:gateway && npm run test:gateway && npm run typecheck:worker && npm run test:worker && npm run parity",
     "dev:worker": "npm --prefix services/gateway-worker run dev",
     "deploy:worker": "npm --prefix services/gateway-worker run deploy",
     "apps:generate": "cd apps && xcodegen generate"

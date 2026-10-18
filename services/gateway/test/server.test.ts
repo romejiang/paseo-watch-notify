@@ -25,13 +25,14 @@ function fakeSender(result: DeliveryResult | ((target: PushTarget) => DeliveryRe
 async function startGateway(options?: {
   result?: DeliveryResult | ((target: PushTarget) => DeliveryResult);
   rateLimit?: { enabled: boolean; perChannel: number; perIp: number; windowMs: number };
+  defaultEnvironment?: "development" | "production";
 }) {
   const store = new DeviceStore(join(mkdtempSync(join(tmpdir(), "gw-srv-")), "devices.json"));
   const { sender, captured } = fakeSender(options?.result ?? { token: "x", ok: true, status: 200 });
   const server = createServer({
     store,
     sender,
-    defaultEnvironment: "development",
+    defaultEnvironment: options?.defaultEnvironment ?? "development",
     defaultTopic: "com.example.paseonotify",
     rateLimit: options?.rateLimit,
   });
@@ -54,7 +55,7 @@ const CHANNEL = "pn_test_channel_a";
 const OTHER = "pn_test_channel_b";
 
 describe("gateway server", () => {
-  test("healthz reports the total device count", async () => {
+  test("healthz reports ok", async () => {
     const gateway = await startGateway();
     open.push(gateway.close);
     gateway.store.upsert(channelIdFromSecret(CHANNEL), {
@@ -64,7 +65,7 @@ describe("gateway server", () => {
     });
     const response = await fetch(`${gateway.base}/healthz`);
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ ok: true, devices: 1 });
+    expect(await response.json()).toEqual({ ok: true });
   });
 
   test("registers a device and forwards a notification to it", async () => {
@@ -182,6 +183,66 @@ describe("gateway server", () => {
     expect((await notify(CHANNEL)).status).toBe(429);
     // A different channel still has its own budget.
     expect((await notify(OTHER)).status).toBe(200);
+  });
+
+  test("honors the device-reported environment", async () => {
+    const gateway = await startGateway();
+    open.push(gateway.close);
+    const response = await fetch(`${gateway.base}/api/devices`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${CHANNEL}`, "content-type": "application/json" },
+      body: JSON.stringify({ token: "t1", environment: "production" }),
+    });
+    expect((await response.json()) as { environment: string }).toMatchObject({
+      environment: "production",
+      updatedAt: expect.any(String),
+    });
+  });
+
+  test("treats sandbox as development even when the default is production", async () => {
+    const gateway = await startGateway({ defaultEnvironment: "production" });
+    open.push(gateway.close);
+    const response = await fetch(`${gateway.base}/api/devices`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${CHANNEL}`, "content-type": "application/json" },
+      body: JSON.stringify({ token: "t1", environment: "sandbox" }),
+    });
+    expect((await response.json()) as { environment: string }).toMatchObject({ environment: "development" });
+  });
+
+  test("rejects an invalid JSON body with 400", async () => {
+    const gateway = await startGateway();
+    open.push(gateway.close);
+    const response = await fetch(`${gateway.base}/api/notify`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${CHANNEL}`, "content-type": "application/json" },
+      body: "{not json",
+    });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: "invalid JSON body" });
+  });
+
+  test("rejects an oversized body with 413", async () => {
+    const gateway = await startGateway();
+    open.push(gateway.close);
+    const response = await fetch(`${gateway.base}/api/notify`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${CHANNEL}`, "content-type": "application/json" },
+      body: JSON.stringify({ preview: "x".repeat(70 * 1024) }),
+    });
+    expect(response.status).toBe(413);
+    expect(await response.json()).toMatchObject({ error: "request body too large" });
+  });
+
+  test("rejects a malformed device token encoding with 400", async () => {
+    const gateway = await startGateway();
+    open.push(gateway.close);
+    const response = await fetch(`${gateway.base}/api/devices/%ZZ`, {
+      method: "DELETE",
+      headers: { authorization: `Bearer ${CHANNEL}` },
+    });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: "invalid device token" });
   });
 
   test("deletes a registered device", async () => {

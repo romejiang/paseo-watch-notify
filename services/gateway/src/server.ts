@@ -36,21 +36,31 @@ function sendJson(response: ServerResponse, status: number, body: unknown): void
   response.end(payload);
 }
 
-async function readJsonBody(request: IncomingMessage, maxBytes: number): Promise<unknown> {
+type BodyResult = { ok: true; value: unknown } | { ok: false; status: number; error: string };
+
+async function readJsonBody(request: IncomingMessage, maxBytes: number): Promise<BodyResult> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of request) {
     const buffer = chunk as Buffer;
     size += buffer.length;
     if (size > maxBytes) {
-      throw new Error("request body too large");
+      return { ok: false, status: 413, error: "request body too large" };
     }
     chunks.push(buffer);
   }
   if (size === 0) {
-    return {};
+    return { ok: true, value: {} };
   }
-  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  const text = Buffer.concat(chunks).toString("utf8");
+  if (text.trim() === "") {
+    return { ok: true, value: {} };
+  }
+  try {
+    return { ok: true, value: JSON.parse(text) };
+  } catch {
+    return { ok: false, status: 400, error: "invalid JSON body" };
+  }
 }
 
 /** The bearer token is the caller's channel secret. */
@@ -60,9 +70,18 @@ function channelSecret(request: IncomingMessage): string {
   return match?.[1]?.trim() ?? "";
 }
 
+/**
+ * Map a device-reported environment onto an APNs host.
+ *
+ * `"sandbox"` is Apple's older name for the development environment, so it maps deterministically
+ * instead of falling through to the deployment default. Anything unrecognised uses the default.
+ */
 function asEnvironment(value: unknown, fallback: ApnsEnvironment): ApnsEnvironment {
-  if (value === "production" || value === "development") {
-    return value;
+  if (value === "production") {
+    return "production";
+  }
+  if (value === "development" || value === "sandbox") {
+    return "development";
   }
   return fallback;
 }
@@ -102,8 +121,7 @@ export function createServer(deps: GatewayDeps) {
     const method = request.method ?? "GET";
 
     if (method === "GET" && url.pathname === "/healthz") {
-      // Never leaks per-channel information; a total is safe.
-      sendJson(response, 200, { ok: true, devices: deps.store.totalCount() });
+      sendJson(response, 200, { ok: true });
       return;
     }
 
@@ -136,36 +154,51 @@ export function createServer(deps: GatewayDeps) {
     }
 
     if (method === "POST" && url.pathname === "/api/notify") {
-      const body = (await readJsonBody(request, maxBodyBytes)) as NotifyPayload;
-      const result = await deliver(channelId, body);
+      const body = await readJsonBody(request, maxBodyBytes);
+      if (!body.ok) {
+        sendJson(response, body.status, { error: body.error });
+        return;
+      }
+      const result = await deliver(channelId, body.value as NotifyPayload);
       sendJson(response, 200, result);
       return;
     }
 
     if (method === "POST" && url.pathname === "/api/devices") {
-      const body = (await readJsonBody(request, maxBodyBytes)) as {
+      const body = await readJsonBody(request, maxBodyBytes);
+      if (!body.ok) {
+        sendJson(response, body.status, { error: body.error });
+        return;
+      }
+      const input = body.value as {
         token?: string;
         environment?: string;
         topic?: string;
         platform?: string;
       };
-      const token = body.token?.trim();
+      const token = input.token?.trim();
       if (!token) {
         sendJson(response, 400, { error: "token is required" });
         return;
       }
       const record = deps.store.upsert(channelId, {
         token,
-        environment: asEnvironment(body.environment, deps.defaultEnvironment),
-        topic: body.topic?.trim() || deps.defaultTopic,
-        platform: body.platform?.trim(),
+        environment: asEnvironment(input.environment, deps.defaultEnvironment),
+        topic: input.topic?.trim() || deps.defaultTopic,
+        platform: input.platform?.trim(),
       });
       sendJson(response, 201, record);
       return;
     }
 
     if (method === "DELETE" && url.pathname.startsWith("/api/devices/")) {
-      const token = decodeURIComponent(url.pathname.slice("/api/devices/".length));
+      let token: string;
+      try {
+        token = decodeURIComponent(url.pathname.slice("/api/devices/".length));
+      } catch {
+        sendJson(response, 400, { error: "invalid device token" });
+        return;
+      }
       const removed = deps.store.remove(channelId, token);
       sendJson(response, removed ? 200 : 404, { removed });
       return;

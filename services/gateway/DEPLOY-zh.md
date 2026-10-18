@@ -128,6 +128,50 @@ server {
 | `RATE_LIMIT_WINDOW_MS` | `60000` | 窗口长度（毫秒） |
 
 超限返回 **HTTP 429** + `Retry-After` 头。按 IP 那条依赖反代传 `X-Forwarded-For`（Caddy/Nginx 默认会带）。
+Cloudflare Worker 版用**完全相同的算法、默认值和响应**实现限流（计数放在 Durable Object 里，
+所以同样是全局限额）；线上实测两边对同一密钥突发 120 次都是 60 通过 / 60 拒绝。
+
+## 与 Cloudflare Worker 版的一致性
+
+两个网关是**同一契约的两种部署**，客户端（Paseo 插件 / 手表 App）可以任意指向其中一个。
+仓库里有两层验证：
+
+```bash
+# 1) 离线对照：Node 版真起 HTTP 服务，Worker 版直接调 handler，同一串请求逐条比对
+npm --prefix services/gateway run parity
+# => PARITY OK — 29/29 checks matched across both gateways
+
+# 2) 线上对照：同一脚本分别打到两个已部署的网关，再 diff
+services/parity/live-check.sh https://notify.romejiang.top > /tmp/worker.txt
+ssh root@yang 'bash -s -- http://127.0.0.1:8787' < services/parity/live-check.sh > /tmp/node.txt
+diff /tmp/node.txt /tmp/worker.txt
+```
+
+两边被验证为完全一致的行为：
+
+| 方面 | 行为 |
+| --- | --- |
+| 路由 | `GET /healthz`、`POST /api/devices`、`DELETE /api/devices/:token`、`POST /api/notify`；其余一律 `404 {"error":"not found"}` |
+| 鉴权 | `Authorization: Bearer <渠道密钥>`；缺失或为空 → `401 {"error":"missing bearer token"}` |
+| 注册 | 无 token → `400 {"error":"token is required"}`；成功 → `201` + `{token, environment, topic, platform?, updatedAt}` |
+| 环境 | 设备自带的 `development`/`sandbox`/`production` 优先，未带则用部署默认；`sandbox` 永远等同 `development`（两边部署默认都是 `production`） |
+| 删除 | 成功 → `200 {"removed":true}`；不存在 → `404 {"removed":false}`；token 编码非法 → `400 {"error":"invalid device token"}` |
+| 推送 | `200 {delivered, failed, devices}`；无设备 → 全 0；APNs 返回 `410` 时自动删除该 token |
+| 请求体 | 非法 JSON → `400 {"error":"invalid JSON body"}`；超过 64 KB → `413 {"error":"request body too large"}` |
+| 限流 | 每渠道 + 每 IP 固定窗口，超限 → `429` + `Retry-After`；线上实测同一密钥突发 120 次，两边都是 60 通过 / 60 拒绝 |
+| 载荷 | `payload.ts` 逐字一致（声音、`interruption-level`、字段映射） |
+
+**唯一已知的差异（不可消除）**：URL 路径里带非法百分号编码（如 `/api/devices/%ZZ`）时，
+Cloudflare 边缘会在请求到达 Worker 之前直接回 `400` HTML，而 Node 版回我们自己的
+`400 {"error":"invalid device token"}`。状态码一致，只有响应体不同。真实客户端不会发这种 URL。
+
+实现底层不同（客户端感知不到）：
+
+- 设备表：Node 版写 `devices.json`；Worker 版写 KV。**两边各存一份**，手表注册到哪台，插件就要发到哪台。
+- 限流计数：Node 版在进程内；Worker 版在 Durable Object 里（见 `services/gateway-worker/README.md`）。
+
+改了任何一边的路由/校验/响应，都必须让 `npm run parity` 通过。
+
 
 ## 验证
 

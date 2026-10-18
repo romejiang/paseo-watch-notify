@@ -1,0 +1,7 @@
+{
+  "name": "paseo-notify-gateway-parity",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Behavioural parity harness: replays the same request matrix against both gateway implementations and diffs every response. Run with `npm --prefix services/gateway run parity`."
+}

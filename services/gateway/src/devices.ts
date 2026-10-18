@@ -84,7 +84,7 @@ export class DeviceStore {
     return this.channels.get(channelId)?.get(token);
   }
 
-  /** Number of registered devices across every channel; used only by /healthz. */
+  /** Number of registered devices across every channel; used only for the startup log. */
   totalCount(): number {
     let total = 0;
     for (const records of this.channels.values()) {

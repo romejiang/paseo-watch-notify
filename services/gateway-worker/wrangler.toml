@@ -15,10 +15,28 @@ routes = [
 [vars]
 # The iOS app's Bundle ID, shared by every user of the published plugin.
 APNS_TOPIC = "com.romejiang.paseonotify"
-# "development" (sandbox) or "production".
-APNS_ENV = "development"
+# "development" (sandbox) or "production". Devices normally report their own environment; this is
+# only the fallback. Both deployments use the same value so a device that omits it behaves alike.
+APNS_ENV = "production"
 # Start with "1" so a fresh deploy never talks to APNs before secrets exist. Set to "0" for real pushes.
 DRY_RUN = "0"
+# Rate limiting, matching the Node gateway's defaults. Blank/absent = on.
+# These drive the in-isolate fallback (used by tests and `wrangler dev`).
+RATE_LIMIT_ENABLED = "1"
+RATE_LIMIT_PER_CHANNEL = "60"
+RATE_LIMIT_PER_IP = "120"
+RATE_LIMIT_WINDOW_MS = "60000"
+
+# Authoritative rate limits live in a Durable Object (see src/ratelimit-object.ts). Cloudflare's
+# declarative [[ratelimits]] binding is enforced per isolate, so a burst spread over several isolates
+# outruns it — a Durable Object is a single actor shared by every isolate and location.
+[[durable_objects.bindings]]
+name = "RATE_LIMIT_SHARDS"
+class_name = "RateLimiterShard"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RateLimiterShard"]
 
 # Wiring for the device registry. Create it with:
 #   wrangler kv namespace create DEVICES
