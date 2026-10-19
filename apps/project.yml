@@ -8,9 +8,9 @@ options:
 settings:
   base:
     MARKETING_VERSION: "0.1.0"
-    CURRENT_PROJECT_VERSION: "1"
+    CURRENT_PROJECT_VERSION: "2"
     SWIFT_VERSION: "5.0"
-    DEVELOPMENT_TEAM: ""
+    DEVELOPMENT_TEAM: PW3767GAB4
     CODE_SIGN_STYLE: Automatic
 targets:
   PaseoNotify:
@@ -22,12 +22,24 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.romejiang.paseonotify
         PRODUCT_NAME: PaseoNotify
-        GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_CFBundleDisplayName: Paseo Watch
-        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        # Explicit plist: Xcode's generated one injects UIRequiredDeviceCapabilities = [arm64],
+        # which App Review rejects as a device requirement (Guideline 2.3). See iOS/Info.plist.
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: iOS/Info.plist
         TARGETED_DEVICE_FAMILY: "1"
-        INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait"
         CODE_SIGN_ENTITLEMENTS: iOS/PaseoNotify.entitlements
+    postBuildScripts:
+      # Xcode 27 passes `-requiredArchitecture arm64` to builtin-infoPlistUtility for 64-bit-only
+      # apps, which becomes `UIRequiredDeviceCapabilities = [arm64]`. App Review reads that as a
+      # hardware requirement and rejects the build with Guideline 2.3 ("will not install on the
+      # device used in review"). The app needs no special hardware, so drop the key before signing.
+      - name: Remove injected UIRequiredDeviceCapabilities
+        script: |
+          PLIST="${TARGET_BUILD_DIR}/${INFOPLIST_PATH}"
+          if /usr/libexec/PlistBuddy -c "Delete :UIRequiredDeviceCapabilities" "$PLIST" 2>/dev/null; then
+            echo "note: removed injected UIRequiredDeviceCapabilities from $PLIST"
+          fi
+        basedOnDependencyAnalysis: false
     dependencies:
       - target: PaseoNotify Watch App
         embed: true
