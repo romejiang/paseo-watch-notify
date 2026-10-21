@@ -93,7 +93,7 @@ struct ContentView: View {
           .foregroundStyle(.secondary)
         }
       }
-      .navigationTitle("Paseo Watch Notify")
+      .navigationTitle("Paseo Notify")
       .task {
         await settings.selectReachableGateway()
       }

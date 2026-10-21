@@ -21,7 +21,7 @@ struct WatchContentView: View {
         Image(systemName: "bell.badge")
           .font(.title2)
           .foregroundStyle(.tint)
-        Text("Paseo Watch Notify")
+        Text("Paseo Notify")
           .font(.headline)
         Text(status)
           .font(.footnote)

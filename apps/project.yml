@@ -8,7 +8,7 @@ options:
 settings:
   base:
     MARKETING_VERSION: "1.0"
-    CURRENT_PROJECT_VERSION: "2"
+    CURRENT_PROJECT_VERSION: "3"
     SWIFT_VERSION: "5.0"
     DEVELOPMENT_TEAM: PW3767GAB4
     CODE_SIGN_STYLE: Automatic
@@ -44,7 +44,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.romejiang.paseonotify.watchkitapp
         PRODUCT_NAME: PaseoNotify
         GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_CFBundleDisplayName: Paseo Watch
+        INFOPLIST_KEY_CFBundleDisplayName: Paseo Notify
         INFOPLIST_KEY_WKCompanionAppBundleIdentifier: com.romejiang.paseonotify
         INFOPLIST_KEY_WKRunsIndependentlyOfCompanionApp: YES
         CODE_SIGN_ENTITLEMENTS: "PaseoNotify Watch App.entitlements"
