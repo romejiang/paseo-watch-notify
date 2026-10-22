@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F6F1FF"/>
+      <stop offset="0.55" stop-color="#E6DAFF"/>
+      <stop offset="1" stop-color="#CBB7FF"/>
+    </linearGradient>
+    <linearGradient id="bell" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4B2BA8"/>
+      <stop offset="1" stop-color="#2C1568"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+
+  <!-- A generic notification bell. Deliberately not a depiction of any device. -->
+  <g fill="url(#bell)">
+    <rect x="488" y="244" width="48" height="76" rx="24"/>
+    <path d="M512 298
+             C 610 298 682 370 686 476
+             L 692 566
+             C 695 602 712 632 742 656
+             L 758 668
+             C 770 678 764 696 748 696
+             L 276 696
+             C 260 696 254 678 266 668
+             L 282 656
+             C 312 632 329 602 332 566
+             L 338 476
+             C 342 370 414 298 512 298 Z"/>
+    <circle cx="512" cy="752" r="48"/>
+  </g>
+</svg>
